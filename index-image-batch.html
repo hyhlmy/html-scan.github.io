@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<title>zxing-cpp/wasm reader demo</title>
+	<script src="zxing_reader.js"></script>
+	<script>
+		var zxing = ZXing().then(function(instance) {
+		zxing = instance; // this line is supposedly not required but with current emsdk it is :-/
+	});
+
+	async function readBarcodes() {
+		// 格式：Aztec、Codabar、Code39、Code93、Code128、DataMatrix、DataBar、DataBarExpanded、DXFilmEdge、EAN8、EAN13、ITF、PDF417、QRCode、MicroQRCode、RMQRCode、UPCA、UPCE、LinearCodes、MatrixCodes
+		let format = '';
+		let file = document.getElementById("file").files[0];
+
+		let arrayBuffer = await file.arrayBuffer();
+		let u8Buffer = new Uint8Array(arrayBuffer);
+
+		let zxingBuffer = zxing._malloc(u8Buffer.length);
+		zxing.HEAPU8.set(u8Buffer, zxingBuffer);
+		let results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, format, 0xff);
+		zxing._free(zxingBuffer);
+
+		showResults(results);
+		showImageWithResults(file, results);
+	}
+
+	function showImageWithResults(file, results) {
+		var canvas = document.getElementById("canvas");
+		var img = new Image()
+		img.addEventListener('load', function() {
+			canvas.width = img.width;
+			canvas.height = img.height;
+			const ctx = canvas.getContext("2d");
+			ctx.drawImage(img, 0, 0);
+
+			for (let i = 0; i < results.size(); i += 1) {
+				const { position } = results.get(i);
+				// Draw outline square
+				ctx.beginPath();
+				ctx.moveTo(position.topLeft.x, position.topLeft.y);
+				ctx.lineTo(position.topRight.x, position.topRight.y);
+				ctx.lineTo(position.bottomRight.x, position.bottomRight.y);
+				ctx.lineTo(position.bottomLeft.x, position.bottomLeft.y);
+				ctx.closePath();
+				ctx.strokeStyle = "red";
+				ctx.lineWidth = 4;
+				ctx.stroke();
+
+				// Draw number inside square
+				const text = {
+					text: i + 1,
+					size: Math.abs((position.bottomRight.y - position.topLeft.y)) / 2,
+					x: (position.topLeft.x + position.bottomRight.x) / 2.0,
+					y: (position.topLeft.y + position.bottomRight.y) / 2.0,
+				};
+				ctx.fillStyle = "white";
+				ctx.font = `bold ${text.size}px sans`;
+				ctx.textAlign = "center";
+				ctx.textBaseline = "middle";
+				ctx.fillText(text.text, text.x, text.y);
+				ctx.strokeStyle = "red";
+				ctx.lineWidth = 2;
+				ctx.strokeText(text.text, text.x, text.y);
+			}
+		});
+		img.src = URL.createObjectURL(file)
+	}
+
+	function escapeTags(htmlStr) {
+		return htmlStr.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+	}
+
+	function u8a2hex(bytes) {
+		return bytes.reduce((a, b) => a + b.toString(16).padStart(2, '0') + ' ', '');
+	}
+
+	function showResults(results) {
+		const resultsDiv = document.getElementById("results");
+		resultsDiv.innerHTML = "";
+		if (results.size() === 0) {
+			resultsDiv.innerHTML += "No " + (document.getElementById("format").value || "barcode") + " found";
+		}
+		else {
+			for (let i = 0; i < results.size(); i += 1) {
+				const { format, text, bytes, error } = results.get(i);
+				resultsDiv.innerHTML += "<li>Format: <strong>" + format + "</strong>"
+					+ "<pre>" + (escapeTags(text) || '<font color="red">Error: ' + error + '</font>') + "</pre>"
+					+ "<pre>" + u8a2hex(bytes) + "</pre>"
+					+ "</li>";
+			}
+		}
+	}
+	</script>
+</head>
+
+<body style="text-align: left">
+	<h2>zxing-cpp/wasm reader demo</h2>
+	<p></p>
+	<div>
+		图片文件: <input id="file" type="file" accept="image/png, image/jpeg" onchange="readBarcodes()" />
+		<br />
+		<ol id="results"></ol>
+		<br />
+		<canvas id="canvas"></canvas>
+	</div>
+</body>
+
+</html>

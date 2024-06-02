@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="UTF-8">
+	<title>zxing-cpp/wasm live demo</title>
+	<link rel="shortcut icon" href="#" />
+	<script src="zxing_reader.js"></script>
+	<style>
+		body {
+			text-align: center;
+			margin: 0;
+			padding: 0;
+			width: 100%;
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			font-family: Arial, sans-serif;
+		}
+
+		canvas {
+			max-width: 100%;
+			max-height: 100%;
+		}
+
+		button {
+			margin: 10px;
+			padding: 10px 20px;
+			font-size: 18px;
+		}
+
+		#result {
+			margin-top: 20px;
+			font-size: 18px;
+			word-wrap: break-word;
+		}
+
+		@media (max-width: 600px) {
+			button {
+				width: 100%;
+				padding: 15px 0;
+				font-size: 16px;
+			}
+		}
+	</style>
+</head>
+
+<body>
+<h2>zxing-cpp/wasm live demo</h2>
+
+<!-- 扫一扫按钮 -->
+<button id="scanButton">扫一扫</button>
+<!-- 停止扫码按钮 -->
+<button id="stopButton">停止扫码</button>
+<br />
+<div id="video-wh"></div>
+<br />
+<div id="result"></div>
+<br />
+<!-- 画布用于显示摄像头视频 -->
+<canvas id="canvas"></canvas>
+
+<audio id="notificationSound">
+	<source src="y1184.mp3" type="audio/mpeg">
+	您的浏览器不支持音频元素。
+</audio>
+
+<script>
+	// 初始化ZXing实例
+	var zxing = ZXing().then(function (instance) {
+		zxing = instance;
+	});
+
+	// 条码格式：Aztec、Codabar、Code39、Code93、Code128、DataMatrix、DataBar、DataBarExpanded、DXFilmEdge、EAN8、EAN13、ITF、PDF417、QRCode、MicroQRCode、RMQRCode、UPCA、UPCE、LinearCodes、MatrixCodes
+	const format = ''; // 所有格式
+	const mode = true; // 模式：true-普通、false-快速
+	const deviceId = 'environment'; // 使用后置摄像头
+
+	const canvas = document.getElementById("canvas");
+	const resultElement = document.getElementById("result");
+	const scanButton = document.getElementById("scanButton");
+	const stopButton = document.getElementById("stopButton");
+
+	const ctx = canvas.getContext("2d", { willReadFrequently: true });
+	const video = document.createElement("video");
+	video.setAttribute("id", "video");
+	video.setAttribute("autoplay", "");
+
+	let stream = null; // 摄像头流
+	let scanning = false; // 是否正在扫描
+
+	// 从画布中读取条码
+	function readBarcodeFromCanvas(canvas) {
+		var imgWidth = canvas.width;
+		var imgHeight = canvas.height;
+		var imageData = canvas.getContext('2d').getImageData(0, 0, imgWidth, imgHeight);
+		var sourceBuffer = imageData.data;
+
+		if (zxing != null) {
+			var buffer = zxing._malloc(sourceBuffer.byteLength);
+			zxing.HEAPU8.set(sourceBuffer, buffer);
+			var result = zxing.readBarcodesFromPixmap(buffer, imgWidth, imgHeight, mode, format, 0xff);
+			zxing._free(buffer);
+			return result;
+		} else {
+			return { error: "ZXing尚未初始化" };
+		}
+	}
+
+	// 绘制识别结果的边框
+	function drawResult(code) {
+		ctx.beginPath();
+		ctx.lineWidth = 4;
+		ctx.strokeStyle = "#67C23A";
+		with (code.position) {
+			ctx.moveTo(topLeft.x, topLeft.y);
+			ctx.lineTo(topRight.x, topRight.y);
+			ctx.lineTo(bottomRight.x, bottomRight.y);
+			ctx.lineTo(bottomLeft.x, bottomLeft.y);
+			ctx.lineTo(topLeft.x, topLeft.y);
+			ctx.stroke();
+		}
+	}
+
+	// 转义HTML标签
+	function escapeTags(htmlStr) {
+		return htmlStr.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+	}
+
+	// 处理每一帧画面
+	const processFrame = function () {
+		if (!scanning) return; // 如果没有在扫描，则返回
+
+		ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+		const code = readBarcodeFromCanvas(canvas);
+		if (code.text) {
+			resultElement.innerText = code.format + ": " + escapeTags(code.text);
+			drawResult(code);
+			stopVideoStream(); // 停止视频流
+			playNotificationSound(); // 播放通知声音
+		} else {
+			resultElement.innerText = "找不到条形码";
+			requestAnimationFrame(processFrame); // 继续处理下一帧
+		}
+	};
+
+	// 启动摄像头视频流
+	const startVideoStream = function () {
+		navigator.mediaDevices
+				.getUserMedia({
+					video: {
+						facingMode: deviceId,
+					},
+					audio: false
+				})
+				.then(function (mediaStream) {
+					stream = mediaStream;
+					video.srcObject = stream;
+					video.setAttribute("playsinline", true);
+					video.play();
+
+					video.onloadedmetadata = function () {
+						const width = video.videoWidth;
+						const height = video.videoHeight;
+
+						const innerWidth = window.innerWidth;
+
+						document.getElementById("video-wh").innerText = "video-wh：" + width + "x" + height + "   innerWidth:" + innerWidth + "    innerHeight:" + Math.floor(innerWidth * (height / width));
+
+						canvas.width = innerWidth;
+						canvas.height = Math.floor(innerWidth * (height / width));
+
+						scanning = true;
+						processFrame();
+					};
+				})
+				.catch(function (error) {
+					console.error("访问相机时出错:", error);
+				});
+	};
+
+	// 停止摄像头视频流
+	const stopVideoStream = function () {
+		if (stream) {
+			stream.getTracks().forEach(track => track.stop());
+			stream = null;
+			scanning = false;
+		}
+	};
+
+	// 点击“扫一扫”按钮时启动视频流
+	scanButton.addEventListener("click", function () {
+		startVideoStream();
+	});
+
+	// 点击“停止扫码”按钮时停止视频流
+	stopButton.addEventListener("click", function () {
+		stopVideoStream();
+	});
+
+	// 播放通知声音的函数
+	function playNotificationSound() {
+		const notificationSound = document.getElementById("notificationSound");
+		notificationSound.play();
+	}
+</script>
+</body>
+
+</html>

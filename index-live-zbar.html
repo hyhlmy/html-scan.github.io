@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>zxing-cpp/wasm live demo</title>
+    <link rel="shortcut icon" href="#" />
+    <style>
+        body {
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: Arial, sans-serif;
+        }
+
+        #result {
+            margin-top: 20px;
+            font-size: 18px;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+  <div id="result">123</div>
+  <img id="img" crossorigin="anonymous" src="qrcode.png">
+
+  <script src="zbar-wasm.js"></script>
+  <script>
+    window.onload = function() {
+      var img = document.getElementById('img');
+      var result = document.getElementById('result');
+      var canvas = document.createElement('canvas');
+      var context = canvas.getContext('2d');
+
+      img.onload = function() {
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        context.drawImage(img, 0, 0);
+
+        var imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+
+        zbarWasm.scanImageData(imageData).then(function(symbols) {
+          symbols.forEach(function(s) {
+            s.rawData = s.decode();
+          });
+          result.innerText = JSON.stringify(symbols);
+        }).catch(function(error) {
+          console.error('Failed to scan image data:', error);
+        });
+      };
+
+      img.onerror = function() {
+        console.error('Failed to load image.');
+      };
+    };
+  </script>
+</body>
+</html>
